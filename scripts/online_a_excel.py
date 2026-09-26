@@ -14,6 +14,7 @@ import unicodedata
 from pathlib import Path
 
 import openpyxl
+import pandas as pd
 from openpyxl.comments import Comment
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -50,6 +51,19 @@ ISO = {"Argentina": "ARG", "Bolivia": "BOL", "Brasil": "BRA", "Chile": "CHL", "C
 NOMBRES_DATAHUB = {"Brasil": ["Brazil"], "México": ["Mexico"], "Panamá": ["Panama"], "Perú": ["Peru"],
                    "España": ["Spain"],
                    "Rep. Dominicana": ["Dominican Republic", "Dominican Rep", "Dominican Rep."]}
+# Controles país-año
+GINI_BM = "data/controles/gini_bm.xls"  # Banco Mundial SI.POV.GINI, 0-100
+# nombre de columna: (archivo, fuente, formato)
+CONTROLES = {
+    "Homicidios por 100.000 hab.": ("data/controles/homicidios_bm.xls",
+                                    "Banco Mundial, WDI VC.IHR.PSRC.P5 (UNODC)", "0.0"),
+    "Crecimiento del PIB (% anual)": ("data/controles/crecimiento_pib_bm.xlsx",
+                                      "Banco Mundial, WDI NY.GDP.MKTP.KD.ZG", "0.0"),
+    "Gasto social (% del PIB, gob. central)": ("data/controles/gasto_social_cepal.xlsx",
+                                               "CEPALSTAT, gasto público social del gobierno central", "0.0"),
+}
+NOMBRES_CEPAL = {"Bolivia (Estado Plurinacional de)": "Bolivia", "República Dominicana": "Rep. Dominicana",
+                 "Venezuela (República Bolivariana de)": "Venezuela"}
 # Empalme por regresión: CPI nuevo (2012) = a + b * CPI antiguo (2011), con todos los países
 ANIO_PUENTE_NUEVO = 2012
 # Nombres de datahub (2011) que no coinciden con los de HDX
@@ -115,6 +129,24 @@ def leer_cpi():
             if r["iso3"] in pais_de and r["score"]:
                 glob[(pais_de[r["iso3"]], int(r["year"]))] = float(r["score"])
     return datahub, glob
+
+
+def leer_banco_mundial(ruta):
+    """{(país, año): valor} de un archivo de Indicadores del Desarrollo Mundial (hoja Data)."""
+    datos = pd.read_excel(RAIZ / ruta, sheet_name="Data", header=3)
+    pais_de = {i: p for p, i in ISO.items()}
+    datos = datos[datos["Country Code"].isin(pais_de)]
+    largo = datos.melt(id_vars="Country Code", value_vars=[c for c in datos.columns if str(c)[:2] in ("19", "20")],
+                       var_name="anio", value_name="valor").dropna()
+    return {(pais_de[r["Country Code"]], int(float(r["anio"]))): float(r["valor"]) for _, r in largo.iterrows()}
+
+
+def leer_cepal(ruta):
+    """{(país, año): valor} de una descarga de CEPALSTAT (hoja datos)."""
+    datos = pd.read_excel(RAIZ / ruta, sheet_name="datos")
+    datos["pais"] = datos["País__ESTANDAR"].replace(NOMBRES_CEPAL)
+    datos = datos[datos["pais"].isin(ISO)]
+    return {(r["pais"], int(r["Años__ESTANDAR"])): float(r["value"]) for _, r in datos.iterrows()}
 
 
 def normalizar_nombre(nombre: str) -> str:
@@ -200,15 +232,24 @@ def main():
 
     # --- Gini: insumo a completar -------------------------------------------
     wg = wb.create_sheet("Gini")
+    gini = leer_banco_mundial(GINI_BM)
     encabezado(wg, 1, ["País", "Año", "Gini (0-100)", "Fuente", "Clave"])
     for i, (p, a) in enumerate(panel, 2):
         wg.cell(i, 1, p).font = F_NORMAL
         wg.cell(i, 2, a).font = F_NORMAL
+        if (p, a) in gini:
+            wg.cell(i, 3, gini[(p, a)])
+            wg.cell(i, 4, "Banco Mundial, WDI SI.POV.GINI")
+        else:  # sin dato del Banco Mundial: se puede completar con otra fuente
+            for j in (3, 4):
+                wg.cell(i, j).fill = RELLENO_INPUT
         for j in (3, 4):
-            wg.cell(i, j).fill, wg.cell(i, j).font = RELLENO_INPUT, F_INPUT
+            wg.cell(i, j).font = F_INPUT
+        wg.cell(i, 3).number_format = "0.0"
         wg.cell(i, 5, f'=A{i}&"|"&B{i}').font = F_NORMAL
-    wg["C1"].comment = Comment("Escriba el Gini del país-año en escala 0-100 (ej.: 42.4). "
-                               "Deje vacío si no hay dato; esa fila quedará fuera de la regresión.", "Claude")
+    wg["C1"].comment = Comment("Banco Mundial, Indicadores del Desarrollo Mundial, SI.POV.GINI (0-100). "
+                               "Celdas amarillas = sin dato para ese año; puede completarlas con otra fuente "
+                               "(p. ej. SEDLAC) o dejarlas vacías (la fila queda fuera de la regresión).", "Claude")
     wg.freeze_panes = "A2"
     anchos(wg, [16, 7, 13, 40, 22])
     ultima_gini = len(panel) + 1
@@ -275,6 +316,25 @@ def main():
     wk.row_dimensions[1].height = 42
     ultima_cpi = len(panel) + 1
 
+    # --- Controles: homicidios, crecimiento y gasto social ---------------------
+    controles = {n: (leer_banco_mundial(r) if "bm" in r else leer_cepal(r)) for n, (r, _, _) in CONTROLES.items()}
+    wt = wb.create_sheet("Controles")
+    encabezado(wt, 1, ["País", "Año"] + list(CONTROLES) + ["Clave"])
+    for j, (_, fuente, _) in enumerate(CONTROLES.values(), 3):
+        wt.cell(1, j).comment = Comment(f"Fuente: {fuente}. Vacío = sin dato para ese país-año.", "Claude")
+    for i, (p, a) in enumerate(panel, 2):
+        wt.cell(i, 1, p).font = F_NORMAL
+        wt.cell(i, 2, a).font = F_NORMAL
+        for j, (n, (_, _, fmt)) in enumerate(CONTROLES.items(), 3):
+            c = wt.cell(i, j, controles[n].get((p, a)))
+            c.font, c.number_format = F_INPUT, fmt
+        wt.cell(i, 3 + len(CONTROLES), f'=A{i}&"|"&B{i}').font = F_NORMAL
+    col_clave_ctrl = get_column_letter(3 + len(CONTROLES))
+    wt.freeze_panes = "C2"
+    wt.auto_filter.ref = f"A1:{col_clave_ctrl}{len(panel) + 1}"
+    anchos(wt, [16, 7] + [18] * len(CONTROLES) + [22])
+    wt.row_dimensions[1].height = 42
+
     # --- Panel_A y Panel_B: listos para regresión -----------------------------
     for criterio in ("A", "B"):
         wp = wb.create_sheet(f"Panel_{criterio}")
@@ -282,9 +342,10 @@ def main():
         titulos = (["País", "Año", f"Y: {DEPENDIENTE} ({criterio})"]
                    + [f"X: {v} ({criterio})" for v in otras]
                    + ["X: Gini", "X: CPI escala 0-10 (empalmado)", "X: CPI 0-100 (desde 2012)",
-                      "X: CPI 0-100 empalmado por regresión",
-                      "Completo con CPI 0-10 (1 = usar)", "Completo con CPI 0-100 (1 = usar)",
-                      "Completo con CPI regresión (1 = usar)"])
+                      "X: CPI 0-100 empalmado por regresión"]
+                   + [f"X: {n}" for n in CONTROLES]
+                   + ["Completo con CPI 0-10 (1 = usar)", "Completo con CPI 0-100 (1 = usar)",
+                      "Completo con CPI regresión (1 = usar)", "Controles completos (1 = sí)"])
         encabezado(wp, 1, titulos)
         for i, (p, a) in enumerate(panel, 2):
             r = i + 1  # fila correspondiente en Categorias
@@ -309,10 +370,20 @@ def main():
                        f"MATCH($A{i}&\"|\"&$B{i},Corrupcion!$H$2:$H${ultima_cpi},0))")
                 c = wp.cell(i, jg + k, f'=IFERROR(IF({idx}="","",{idx}),"")')
                 c.font, c.number_format = F_LINK, fmt
+            uc = len(panel) + 1
+            for k, (n, (_, _, fmt)) in enumerate(CONTROLES.items(), 4):
+                col = get_column_letter(3 + list(CONTROLES).index(n))
+                idx = (f"INDEX(Controles!${col}$2:${col}${uc},"
+                       f"MATCH($A{i}&\"|\"&$B{i},Controles!${col_clave_ctrl}$2:${col_clave_ctrl}${uc},0))")
+                c = wp.cell(i, jg + k, f'=IFERROR(IF({idx}="","",{idx}),"")')
+                c.font, c.number_format = F_LINK, fmt
+            jc = jg + 3 + len(CONTROLES)  # última columna de controles
             base = f"COUNTBLANK(C{i}:{get_column_letter(jg)}{i})"
             for k in (1, 2, 3):
                 L = get_column_letter(jg + k)
-                wp.cell(i, jg + 3 + k, f"=IF({base}+COUNTBLANK({L}{i})=0,1,0)").font = F_NORMAL
+                wp.cell(i, jc + k, f"=IF({base}+COUNTBLANK({L}{i})=0,1,0)").font = F_NORMAL
+            ctrl = f"{get_column_letter(jg + 4)}{i}:{get_column_letter(jc)}{i}"
+            wp.cell(i, jc + 4, f"=IF(COUNTBLANK({ctrl})=0,1,0)").font = F_NORMAL
         ult = len(panel) + 1
         wp.freeze_panes = "C2"
         wp.auto_filter.ref = f"A1:{get_column_letter(len(titulos))}{ult}"
@@ -331,7 +402,10 @@ def main():
         ("Datos: todas las tablas exportadas en formato largo (una fila por variable, país, año y categoría). "
          "Valores copiados de la herramienta online (texto azul).", False),
         ("Categorias: % de cada categoría por país-año, calculado con SUMIFS sobre Datos.", False),
-        ("Gini: COMPLETAR las celdas amarillas (Gini 0-100 y fuente, p. ej. Banco Mundial / SEDLAC).", False),
+        ("Gini: Banco Mundial (SI.POV.GINI, 0-100). Las celdas amarillas no tienen dato del Banco Mundial para ese "
+         "año; puede completarlas con otra fuente (p. ej. SEDLAC) o dejarlas vacías.", False),
+        ("Controles: homicidios por 100.000 hab. (Banco Mundial/UNODC), crecimiento del PIB % anual (Banco "
+         "Mundial) y gasto público social del gobierno central en % del PIB (CEPALSTAT, 2010-2023).", False),
         ("Corrupcion: Índice de Percepción de la Corrupción (Transparency International). Dos versiones: "
          "'CPI escala 0-10 (empalmado)' = datahub.io hasta 2011 + global HDX / 10 desde 2012; "
          "'CPI 0-100 (desde 2012)' = global HDX sin transformar; 'CPI 0-100 empalmado por regresión' = hasta 2011 "
@@ -354,8 +428,8 @@ def main():
          "de 2012 los cambios entre años no son confiables: use efectos fijos de año); la versión 0-100 no lo cruza.", False),
         ("", False),
         ("CÓMO CORRER LA REGRESIÓN", True),
-        ("1. Complete la hoja Gini. 2. En Panel_A o Panel_B filtre la columna 'Completo' de la versión de CPI "
-         "que va a usar (= 1). 3. Copie las filas visibles y péguelas como valores en una hoja nueva; "
+        ("1. Revise la hoja Gini. 2. En Panel_A o Panel_B filtre la columna 'Completo' de la versión de CPI "
+         "que va a usar (= 1) y, si incluye controles, también 'Controles completos' (= 1). 3. Copie las filas visibles y péguelas como valores en una hoja nueva; "
          "elimine las columnas de CPI que no usa para que las X queden contiguas. "
          "4. Datos > Análisis de datos > Regresión: Rango Y = columna Y; Rango X = columnas X (contiguas).", False),
         ("", False),
@@ -373,6 +447,8 @@ def main():
          "Completo = 0. 'Grupos poderosos' existe desde 2004 y falta en algunos país-año (p. ej. 2015).", False),
         ("CPI México 2015: global HDX (y el Excel oficial de TI) dice 31; datahub dice 3,5. Se usa HDX según "
          "la regla (desde 2012). Otros 10 países difieren en 2015, ninguno de Latinobarómetro.", False),
+        ("Gasto social: solo gobierno central (subestima el gasto en países federales como Argentina, Brasil y "
+         "México); no hay dato para España y Venezuela solo llega a 2014. Con este control el panel empieza en 2010.", False),
         ("Colores: azul = dato de origen; verde = vínculo a otra hoja; negro = cálculo; amarillo = completar.", False),
     ]
     for i, (t, negrita) in enumerate(txt, 1):
