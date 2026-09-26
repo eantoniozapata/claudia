@@ -6,3 +6,6 @@ data/processed/*
 !data/processed/.gitkeep
 __pycache__/
 *.pyc
+
+# Salidas del análisis en R (se regeneran con analisis/analisis_latinobarometro.R)
+resultados/

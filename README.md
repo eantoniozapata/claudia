@@ -60,3 +60,26 @@ Revise **siempre** `reporte_mapeo.csv` después de correrlo:
 pytest tests
 ```
 Las pruebas usan datos sintéticos con el formato de Latinobarómetro, así que no necesitan los microdatos.
+
+## Análisis en R: descriptiva y regresiones MCO
+
+`analisis/analisis_latinobarometro.R` usa el libro `excel/latinobarometro_panel.xlsx`. Lee solo las hojas
+con datos de origen y reconstruye en R todas las variables: criterios A y B, Gini interpolado y CPI
+empalmado por regresión. Después genera:
+
+- **Estadística descriptiva:** resumen por variable, cobertura por año, promedios por país y por año, y
+  matriz de correlaciones.
+- **Gráficos** en `resultados/graficos/`: histogramas, evolución por país, promedio regional, boxplot,
+  dispersión con recta MCO y mapa de correlaciones.
+- **Tabla 1 (MCO, criterio B):** Gini → + grupos poderosos → + CPI 0–100 → + controles → + efectos fijos de
+  año, todos con la misma muestra.
+- **Tabla 2 (robustez):** criterio A, Gini interpolado, CPI empalmado por regresión (panel desde 2004) y
+  efectos fijos de país y año.
+- **Diagnóstico del modelo (4):** VIF, Breusch-Pagan, RESET, observaciones influyentes y gráficos de
+  residuos.
+
+Los errores estándar están agrupados por país (`sandwich::vcovCL`, HC1). Todo se exporta a
+`resultados/resultados_analisis.xlsx`.
+
+Para correrlo, abre el proyecto en RStudio con la raíz del repositorio como directorio de trabajo y ejecuta
+el script completo. Instala solo los paquetes que falten.
