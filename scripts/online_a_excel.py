@@ -28,14 +28,14 @@ VARIABLES = {
         # Serie histórica (país x año) y olas sueltas (un año, países en columnas). Las olas sueltas
         # reemplazan a la serie en los país-año que ambas traen (2015: la serie solo trae 4 países).
         archivos=["data/online/apoyo_democracia.xlsx", "data/online/apoyo_democracia_2013.xlsx",
-                  "data/online/apoyo_democracia_2015.xlsx"],
+                  "data/online/apoyo_democracia_2015.xlsx", "data/online/latinobarometro_2023_microdatos.csv"],
         categorias=["Democracia", "Gobierno Autoritario", "Da lo mismo", "No sabe", "No contesta"],
         interes="Democracia",
         validas=["Democracia", "Gobierno Autoritario", "Da lo mismo"],
     ),
     "Grupos poderosos": dict(
         archivos=["data/online/grupos_poderosos.xlsx", "data/online/grupos_poderosos_2013.xlsx",
-                  "data/online/grupos_poderosos_2015.xlsx"],
+                  "data/online/grupos_poderosos_2015.xlsx", "data/online/latinobarometro_2023_microdatos.csv"],
         categorias=["Grupos poderosos en su propio beneficio", "Para el bien de todo el pueblo",
                     "No sabe; no responde"],
         interes="Grupos poderosos en su propio beneficio",
@@ -199,11 +199,19 @@ def leer_puente():
     return sorted((cpi2012[i][0], i, cpi2011[i], cpi2012[i][1]) for i in cpi2011.keys() & cpi2012.keys())
 
 
-def leer_variable(cfg):
+def leer_csv_microdatos(ruta: Path, variable: str):
+    """CSV calculado desde microdatos (scripts/microdatos_2023_a_ola.R): porcentajes ponderados por país."""
+    with open(ruta, encoding="utf-8") as f:
+        return [(r["pais"], int(r["anio"]), r["categoria"], float(r["porcentaje"]) / 100, int(r["n"]))
+                for r in csv.DictReader(f) if r["variable"] == variable]
+
+
+def leer_variable(nombre, cfg):
     """Une los archivos de una variable; un archivo posterior reemplaza los país-año de los anteriores."""
     por_clave = {}
     for ruta in cfg["archivos"]:
-        filas = leer_exportacion(RAIZ / ruta)
+        filas = (leer_csv_microdatos(RAIZ / ruta, nombre) if ruta.endswith(".csv")
+                 else leer_exportacion(RAIZ / ruta))
         for clave in {(p, a) for p, a, *_ in filas}:
             por_clave[clave] = [f for f in filas if (f[0], f[1]) == clave]
     return [f for clave in sorted(por_clave) for f in por_clave[clave]]
@@ -222,7 +230,7 @@ def anchos(ws, anchos_col):
 
 
 def main():
-    datos = {v: leer_variable(cfg) for v, cfg in VARIABLES.items()}
+    datos = {v: leer_variable(v, cfg) for v, cfg in VARIABLES.items()}
     paises = list(dict.fromkeys(p for p, *_ in datos[DEPENDIENTE]))
     panel = sorted({(p, a) for p, a, *_ in datos[DEPENDIENTE]}, key=lambda x: (paises.index(x[0]), x[1]))
 
@@ -502,8 +510,9 @@ def main():
         ("", False),
         ("NOTAS", True),
         ("'-' en la herramienta = pregunta no aplicada en ese país-año; queda vacío (nunca 0).", False),
-        ("2023: la serie histórica no entrega datos por país (solo el total regional); falta exportar el estudio "
-         "2023 por separado. 2013 y 2015 vienen de los estudios de cada año.", False),
+        ("2013 y 2015 vienen de los estudios de cada año exportados de la herramienta online. 2023 se calculó "
+         "desde los microdatos oficiales (scripts/microdatos_2023_a_ola.R) con el ponderador wt, redondeado a un "
+         "decimal como la herramienta; su total regional coincide con el de la herramienta.", False),
         ("España solo tiene 'Apoyo democracia' (no la pregunta de grupos poderosos): sus filas quedan con "
          "Completo = 0. 'Grupos poderosos' existe desde 2004 y falta en algunos país-año (p. ej. 2015).", False),
         ("CPI México 2015: global HDX (y el Excel oficial de TI) dice 31; datahub dice 3,5. Se usa HDX según "

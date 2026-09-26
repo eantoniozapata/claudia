@@ -83,3 +83,11 @@ Los errores estándar están agrupados por país (`sandwich::vcovCL`, HC1). Todo
 
 Para correrlo, abre el proyecto en RStudio con la raíz del repositorio como directorio de trabajo y ejecuta
 el script completo. Instala solo los paquetes que falten.
+
+### 2023 desde microdatos
+
+La serie histórica de la herramienta online no trae 2023 por país. `scripts/microdatos_2023_a_ola.R` calcula
+los porcentajes ponderados (`wt`) por país de apoyo a la democracia (P10STGBS) y grupos poderosos (P12ST) a
+partir del archivo oficial `Latinobarometro_2023_Esp_Rdata_v1_0.rdata`, descomprimido en `data/raw/lb2023/`.
+El resultado va a `data/online/latinobarometro_2023_microdatos.csv`, que `scripts/online_a_excel.py` suma al
+panel. Los totales regionales coinciden con los de la herramienta online (48,0 % y 72,1 %).
