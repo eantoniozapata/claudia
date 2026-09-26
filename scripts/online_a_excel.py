@@ -308,7 +308,7 @@ def main():
     datahub, glob = leer_cpi()
     wk = wb.create_sheet("Corrupcion")
     encabezado(wk, 1, ["País", "Año", "CPI datahub (0-10, hasta 2011)", "CPI global HDX (0-100, desde 2012)",
-                       "CPI escala 0-10 (empalmado)", "CPI 0-100 (solo desde 2012)",
+                       "CPI 0-100 (solo desde 2012)",
                        "CPI 0-100 empalmado por regresión", "Clave"])
     for i, (p, a) in enumerate(panel, 2):
         wk.cell(i, 1, p).font = F_NORMAL
@@ -319,24 +319,23 @@ def main():
             wk.cell(i, 4, glob[(p, a)])
         for j in (3, 4):
             wk.cell(i, j).font = F_INPUT
-        wk.cell(i, 5, f'=IF(B{i}<={ULTIMO_ANIO_DATAHUB},IF(C{i}="","",C{i}),IF(D{i}="","",D{i}/10))')
-        wk.cell(i, 6, f'=IF(OR(B{i}<={ULTIMO_ANIO_DATAHUB},D{i}=""),"",D{i})')
-        wk.cell(i, 7, f'=IF(B{i}<={ULTIMO_ANIO_DATAHUB},IF(C{i}="","",Puente_CPI!$G$2+Puente_CPI!$G$3*C{i}),'
+        wk.cell(i, 5, f'=IF(OR(B{i}<={ULTIMO_ANIO_DATAHUB},D{i}=""),"",D{i})')
+        wk.cell(i, 6, f'=IF(B{i}<={ULTIMO_ANIO_DATAHUB},IF(C{i}="","",Puente_CPI!$G$2+Puente_CPI!$G$3*C{i}),'
                       f'IF(D{i}="","",D{i}))')
-        wk.cell(i, 8, f'=A{i}&"|"&B{i}')
-        for j in (5, 6, 8):
+        wk.cell(i, 7, f'=A{i}&"|"&B{i}')
+        for j in (5, 7):
             wk.cell(i, j).font = F_NORMAL
-        wk.cell(i, 7).font = F_LINK
-        wk.cell(i, 3).number_format = wk.cell(i, 5).number_format = "0.00"
-        wk.cell(i, 4).number_format = wk.cell(i, 6).number_format = "0"
-        wk.cell(i, 7).number_format = "0.0"
+        wk.cell(i, 6).font = F_LINK
+        wk.cell(i, 3).number_format = "0.00"
+        wk.cell(i, 4).number_format = wk.cell(i, 5).number_format = "0"
+        wk.cell(i, 6).number_format = "0.0"
     wk["C1"].comment = Comment("Fuente: datahub.io/core/corruption-perceptions-index (Transparency "
                                "International). 0.0 en el archivo original = sin dato (queda vacío).", "Claude")
     wk["D1"].comment = Comment("Fuente: data.humdata.org/dataset/global-corruption-perceptions-index "
                                "(Transparency International), columna score.", "Claude")
     wk.freeze_panes = "C2"
-    wk.auto_filter.ref = f"A1:H{len(panel) + 1}"
-    anchos(wk, [16, 7, 16, 18, 16, 16, 18, 22])
+    wk.auto_filter.ref = f"A1:G{len(panel) + 1}"
+    anchos(wk, [16, 7, 16, 18, 16, 18, 22])
     wk.row_dimensions[1].height = 42
     ultima_cpi = len(panel) + 1
 
@@ -365,10 +364,10 @@ def main():
         otras = [v for v in VARIABLES if v != DEPENDIENTE]
         titulos = (["País", "Año", f"Y: {DEPENDIENTE} ({criterio})"]
                    + [f"X: {v} ({criterio})" for v in otras]
-                   + ["X: Gini (observado o interpolado según Gini!M2)", "X: CPI escala 0-10 (empalmado)", "X: CPI 0-100 (desde 2012)",
+                   + ["X: Gini (observado o interpolado según Gini!M2)", "X: CPI 0-100 (desde 2012)",
                       "X: CPI 0-100 empalmado por regresión"]
                    + [f"X: {n}" for n in CONTROLES]
-                   + ["Completo con CPI 0-10 (1 = usar)", "Completo con CPI 0-100 (1 = usar)",
+                   + ["Completo con CPI 0-100 (1 = usar)",
                       "Completo con CPI regresión (1 = usar)", "Controles completos (1 = sí)"])
         encabezado(wp, 1, titulos)
         for i, (p, a) in enumerate(panel, 2):
@@ -390,25 +389,25 @@ def main():
                    f"IF(Gini!$M$2=1,10,3))")
             wp.cell(i, jg, f'=IFERROR(IF({idx}="","",{idx}),"")').font = F_LINK
             wp.cell(i, jg).number_format = "0.0"
-            for k, col, fmt in ((1, "E", "0.00"), (2, "F", "0"), (3, "G", "0.0")):
+            for k, col, fmt in ((1, "E", "0"), (2, "F", "0.0")):
                 idx = (f"INDEX(Corrupcion!${col}$2:${col}${ultima_cpi},"
-                       f"MATCH($A{i}&\"|\"&$B{i},Corrupcion!$H$2:$H${ultima_cpi},0))")
+                       f"MATCH($A{i}&\"|\"&$B{i},Corrupcion!$G$2:$G${ultima_cpi},0))")
                 c = wp.cell(i, jg + k, f'=IFERROR(IF({idx}="","",{idx}),"")')
                 c.font, c.number_format = F_LINK, fmt
             uc = len(panel) + 1
-            for k, (n, (_, _, fmt)) in enumerate(CONTROLES.items(), 4):
+            for k, (n, (_, _, fmt)) in enumerate(CONTROLES.items(), 3):
                 col = get_column_letter(3 + list(CONTROLES).index(n))
                 idx = (f"INDEX(Controles!${col}$2:${col}${uc},"
                        f"MATCH($A{i}&\"|\"&$B{i},Controles!${col_clave_ctrl}$2:${col_clave_ctrl}${uc},0))")
                 c = wp.cell(i, jg + k, f'=IFERROR(IF({idx}="","",{idx}),"")')
                 c.font, c.number_format = F_LINK, fmt
-            jc = jg + 3 + len(CONTROLES)  # última columna de controles
+            jc = jg + 2 + len(CONTROLES)  # última columna de controles
             base = f"COUNTBLANK(C{i}:{get_column_letter(jg)}{i})"
-            for k in (1, 2, 3):
+            for k in (1, 2):
                 L = get_column_letter(jg + k)
                 wp.cell(i, jc + k, f"=IF({base}+COUNTBLANK({L}{i})=0,1,0)").font = F_NORMAL
-            ctrl = f"{get_column_letter(jg + 4)}{i}:{get_column_letter(jc)}{i}"
-            wp.cell(i, jc + 4, f"=IF(COUNTBLANK({ctrl})=0,1,0)").font = F_NORMAL
+            ctrl = f"{get_column_letter(jg + 3)}{i}:{get_column_letter(jc)}{i}"
+            wp.cell(i, jc + 3, f"=IF(COUNTBLANK({ctrl})=0,1,0)").font = F_NORMAL
         ult = len(panel) + 1
         wp.freeze_panes = "C2"
         wp.auto_filter.ref = f"A1:{get_column_letter(len(titulos))}{ult}"
@@ -434,7 +433,6 @@ def main():
         ("Controles: homicidios por 100.000 hab. (Banco Mundial/UNODC), crecimiento del PIB % anual (Banco "
          "Mundial) y gasto público social del gobierno central en % del PIB (CEPALSTAT, 2010-2023).", False),
         ("Corrupcion: Índice de Percepción de la Corrupción (Transparency International). Dos versiones: "
-         "'CPI escala 0-10 (empalmado)' = datahub.io hasta 2011 + global HDX / 10 desde 2012; "
          "'CPI 0-100 (desde 2012)' = global HDX sin transformar; 'CPI 0-100 empalmado por regresión' = hasta 2011 "
          "a + b x datahub, con a y b estimados en la hoja Puente_CPI (176 países, CPI 2012 sobre CPI 2011), "
          "y desde 2012 global HDX.", False),
@@ -450,8 +448,7 @@ def main():
          "B: Grupos / (Grupos + Bien de todo el pueblo).", False),
         ("Ejemplo Argentina 2024: A = 74,6 %; B = 74,6 / (74,6 + 11,6 + 10,1) = 77,5 %.", False),
         ("CPI: más alto = MENOS corrupción percibida. Transparency International cambió la metodología en 2012 y "
-         "advierte que los puntajes anteriores no son comparables con los posteriores: la versión empalmada "
-         "cruza ese quiebre sin corregirlo; la empalmada por regresión corrige la escala (no el hecho de que antes "
+         "advierte que los puntajes anteriores no son comparables con los posteriores: la empalmada por regresión corrige la escala (no el hecho de que antes "
          "de 2012 los cambios entre años no son confiables: use efectos fijos de año); la versión 0-100 no lo cruza.", False),
         ("", False),
         ("CÓMO CORRER LA REGRESIÓN", True),
