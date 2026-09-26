@@ -25,13 +25,17 @@ SALIDA = RAIZ / "excel" / "latinobarometro_panel.xlsx"
 # nombre: archivo, categorías, categoría de interés, categorías válidas (denominador B)
 VARIABLES = {
     "Apoyo democracia": dict(
-        archivo="data/online/apoyo_democracia.xlsx",
+        # Serie histórica (país x año) y olas sueltas (un año, países en columnas). Las olas sueltas
+        # reemplazan a la serie en los país-año que ambas traen (2015: la serie solo trae 4 países).
+        archivos=["data/online/apoyo_democracia.xlsx", "data/online/apoyo_democracia_2013.xlsx",
+                  "data/online/apoyo_democracia_2015.xlsx"],
         categorias=["Democracia", "Gobierno Autoritario", "Da lo mismo", "No sabe", "No contesta"],
         interes="Democracia",
         validas=["Democracia", "Gobierno Autoritario", "Da lo mismo"],
     ),
     "Grupos poderosos": dict(
-        archivo="data/online/grupos_poderosos.xlsx",
+        archivos=["data/online/grupos_poderosos.xlsx", "data/online/grupos_poderosos_2013.xlsx",
+                  "data/online/grupos_poderosos_2015.xlsx"],
         categorias=["Grupos poderosos en su propio beneficio", "Para el bien de todo el pueblo",
                     "No sabe; no responde"],
         interes="Grupos poderosos en su propio beneficio",
@@ -86,10 +90,31 @@ BORDE = Border(bottom=Side(style="thin", color="BFBFBF"))
 MAXFILA = 5000  # rangos acotados para que SUMIFS sea rápido
 
 
+def a_numero(v):
+    return float(v.rstrip("%")) / 100
+
+
+def leer_ola(filas, enc):
+    """Exportación de un solo estudio: categorías en filas, países en columnas."""
+    anio = int(re.search(r"\d{4}", next(str(v) for v in filas[enc - 4] if v)).group())
+    paises = filas[enc][2:]  # la columna B es "Total"
+    fila_n = next(f for f in filas[enc + 1:] if f[0] and str(f[0]).startswith("(N)"))
+    datos = []
+    for f in filas[enc + 1:]:
+        if not f[0] or str(f[0]).startswith("(N)"):
+            continue
+        for pais, v, n in zip(paises, f[2:], fila_n[2:]):
+            if pais and v not in (None, "", "-"):
+                datos.append((pais, anio, f[0], a_numero(v), int(str(n).split(" ")[0].replace(",", ""))))
+    return datos
+
+
 def leer_exportacion(ruta: Path):
     """Devuelve [(país, año, categoría, proporción, n)] omitiendo '-' y el bloque Total."""
     filas = list(openpyxl.load_workbook(ruta).active.iter_rows(values_only=True))
     enc = next(i for i, f in enumerate(filas) if f[0] == "Restaurar vista")
+    if not str(filas[enc][2]).isdigit():  # columnas = países: estudio de un solo año
+        return leer_ola(filas, enc)
     anios = filas[enc][2:]  # la columna B es "Total" (todas las olas juntas)
     datos, pais, bloque = [], None, []
     for f in filas[enc + 1:]:
@@ -104,7 +129,7 @@ def leer_exportacion(ruta: Path):
                     for cat, valores in bloque:
                         v = valores[j]
                         if v not in (None, "", "-"):
-                            datos.append((pais, int(anio), cat, float(v.rstrip("%")) / 100, int(n)))
+                            datos.append((pais, int(anio), cat, a_numero(v), int(n)))
         else:
             bloque.append((f[0], f[2:]))
     return datos
@@ -174,6 +199,16 @@ def leer_puente():
     return sorted((cpi2012[i][0], i, cpi2011[i], cpi2012[i][1]) for i in cpi2011.keys() & cpi2012.keys())
 
 
+def leer_variable(cfg):
+    """Une los archivos de una variable; un archivo posterior reemplaza los país-año de los anteriores."""
+    por_clave = {}
+    for ruta in cfg["archivos"]:
+        filas = leer_exportacion(RAIZ / ruta)
+        for clave in {(p, a) for p, a, *_ in filas}:
+            por_clave[clave] = [f for f in filas if (f[0], f[1]) == clave]
+    return [f for clave in sorted(por_clave) for f in por_clave[clave]]
+
+
 def encabezado(ws, fila, textos, relleno=RELLENO_TITULO, fuente=F_TITULO):
     for j, t in enumerate(textos, 1):
         c = ws.cell(fila, j, t)
@@ -187,7 +222,7 @@ def anchos(ws, anchos_col):
 
 
 def main():
-    datos = {v: leer_exportacion(RAIZ / cfg["archivo"]) for v, cfg in VARIABLES.items()}
+    datos = {v: leer_variable(cfg) for v, cfg in VARIABLES.items()}
     paises = list(dict.fromkeys(p for p, *_ in datos[DEPENDIENTE]))
     panel = sorted({(p, a) for p, a, *_ in datos[DEPENDIENTE]}, key=lambda x: (paises.index(x[0]), x[1]))
 
@@ -419,8 +454,9 @@ def main():
         ("Panel país-año Latinobarómetro para regresión (MCO)", True),
         ("", False),
         ("Fuente: exportaciones de la herramienta de análisis online de Latinobarómetro "
-         "(porcentajes ya ponderados). Archivos: data/online/apoyo_democracia.xlsx y "
-         "data/online/grupos_poderosos.xlsx.", False),
+         "(porcentajes ya ponderados). Archivos: data/online/apoyo_democracia*.xlsx y "
+         "data/online/grupos_poderosos*.xlsx (serie histórica + estudios 2013 y 2015 exportados aparte, porque "
+         "la serie histórica no trae 2013 y en 2015 solo trae 4 países).", False),
         ("", False),
         ("HOJAS", True),
         ("Datos: todas las tablas exportadas en formato largo (una fila por variable, país, año y categoría). "
@@ -466,7 +502,8 @@ def main():
         ("", False),
         ("NOTAS", True),
         ("'-' en la herramienta = pregunta no aplicada en ese país-año; queda vacío (nunca 0).", False),
-        ("2023: la herramienta online no entrega datos por país (solo el total regional), por eso no hay filas 2023.", False),
+        ("2023: la serie histórica no entrega datos por país (solo el total regional); falta exportar el estudio "
+         "2023 por separado. 2013 y 2015 vienen de los estudios de cada año.", False),
         ("España solo tiene 'Apoyo democracia' (no la pregunta de grupos poderosos): sus filas quedan con "
          "Completo = 0. 'Grupos poderosos' existe desde 2004 y falta en algunos país-año (p. ej. 2015).", False),
         ("CPI México 2015: global HDX (y el Excel oficial de TI) dice 31; datahub dice 3,5. Se usa HDX según "
