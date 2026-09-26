@@ -1,0 +1,25 @@
+concepto,regex_nombre,regex_etiqueta,descripcion
+pais_cod,^idenpa$,,Código de país (ISO 3166 numérico)
+anio,^numinves$,,Año del estudio
+ponderador,^(wt|pondera)$,,Ponderador muestral
+sexo,^(sexo|s1)$,^sexo,Sexo del entrevistado
+edad,^(edad|s2)$,^edad,Edad del entrevistado
+apoyo_democracia,,apoyo a la democracia|democracia es preferible,Apoyo a la democracia (La democracia es preferible...)
+satisfaccion_democracia,,satisf.*democracia,Satisfacción con el funcionamiento de la democracia
+ideologia,,izquierda.*derecha,Autoubicación ideológica (0 izquierda - 10 derecha)
+aprobacion_gobierno,,aprueba.*(gestion|gobierno),Aprobación de la gestión del gobierno
+confianza_interpersonal,,confiar en la mayoria,Confianza interpersonal
+confianza_gobierno,,confianza.*\bgobierno\b,Confianza en el gobierno
+confianza_congreso,,confianza.*(congreso|parlamento),Confianza en el Congreso / Parlamento
+confianza_poder_judicial,,confianza.*judicial,Confianza en el Poder Judicial
+confianza_partidos,,confianza.*partidos,Confianza en los partidos políticos
+confianza_fuerzas_armadas,,confianza.*fuerzas armadas,Confianza en las Fuerzas Armadas
+confianza_policia,,confianza.*policia,Confianza en la Policía
+confianza_iglesia,,confianza.*iglesia,Confianza en la Iglesia
+confianza_elecciones,,confianza.*(electoral|elecciones),Confianza en el órgano electoral / elecciones
+situacion_economica_pais,,situacion economica.*pais,Evaluación de la situación económica del país
+situacion_economica_personal,,situacion economica.*(usted|su familia|personal),Situación económica personal/familiar
+problema_principal,,problema mas importante,Problema más importante del país
+interes_politica,,interesado.*politica|interes.*politica,Interés en la política
+religion,,^religion|religion.*(pertenece|es usted),Religión
+educacion,^(reeduc_?1|s10|educacion)$,estudios.*entrevistado|nivel educ|educacion del entrevistado,Nivel educativo del entrevistado

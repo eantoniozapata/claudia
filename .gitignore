@@ -1,0 +1,8 @@
+# Microdatos originales de Latinobarómetro (se descargan con registro; no redistribuir)
+data/raw/*
+!data/raw/.gitkeep
+# Salidas generadas
+data/processed/*
+!data/processed/.gitkeep
+__pycache__/
+*.pyc
