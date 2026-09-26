@@ -233,7 +233,9 @@ def main():
     # --- Gini: insumo a completar -------------------------------------------
     wg = wb.create_sheet("Gini")
     gini = leer_banco_mundial(GINI_BM)
-    encabezado(wg, 1, ["País", "Año", "Gini (0-100)", "Fuente", "Clave"])
+    encabezado(wg, 1, ["País", "Año", "Gini (0-100)", "Fuente", "Clave", "Año anterior con dato",
+                       "Gini anterior", "Año siguiente con dato", "Gini siguiente", "Gini interpolado",
+                       "Método", "", "Usar Gini interpolado en los paneles (1 = sí, 0 = no)"])
     for i, (p, a) in enumerate(panel, 2):
         wg.cell(i, 1, p).font = F_NORMAL
         wg.cell(i, 2, a).font = F_NORMAL
@@ -247,11 +249,33 @@ def main():
             wg.cell(i, j).font = F_INPUT
         wg.cell(i, 3).number_format = "0.0"
         wg.cell(i, 5, f'=A{i}&"|"&B{i}').font = F_NORMAL
+        # Interpolación lineal entre el último año observado antes y el primero después (sin extrapolar)
+        if (p, a) not in gini:
+            antes = [y for (q, y) in gini if q == p and y < a]
+            despues = [y for (q, y) in gini if q == p and y > a]
+            if antes and despues:
+                y0, y1 = max(antes), min(despues)
+                for j, v in ((6, y0), (7, gini[(p, y0)]), (8, y1), (9, gini[(p, y1)])):
+                    wg.cell(i, j, v).font = F_INPUT
+                wg.cell(i, 7).number_format = wg.cell(i, 9).number_format = "0.0"
+        wg.cell(i, 10, f'=IF(C{i}<>"",C{i},IF(OR(F{i}="",H{i}=""),"",G{i}+(I{i}-G{i})*(B{i}-F{i})/(H{i}-F{i})))')
+        wg.cell(i, 10).number_format = "0.0"
+        wg.cell(i, 11, f'=IF(C{i}<>"","Observado",IF(J{i}="","Sin dato","Interpolado "&F{i}&"-"&H{i}))')
+        for j in (10, 11):
+            wg.cell(i, j).font = F_NORMAL
+    wg["M2"] = 0
+    wg["M2"].fill, wg["M2"].font = RELLENO_INPUT, Font(name=ARIAL, size=12, bold=True, color="0000FF")
+    wg["M3"] = "0 = Gini observado (columna C). 1 = Gini interpolado (columna J)."
+    wg["M3"].font = F_NORMAL
+    wg["F1"].comment = Comment("Años y valores observados del Banco Mundial (serie anual completa, no solo los "
+                               "años del panel) usados para interpolar. Sin valor antes o después = no se "
+                               "extrapola.", "Claude")
     wg["C1"].comment = Comment("Banco Mundial, Indicadores del Desarrollo Mundial, SI.POV.GINI (0-100). "
                                "Celdas amarillas = sin dato para ese año; puede completarlas con otra fuente "
                                "(p. ej. SEDLAC) o dejarlas vacías (la fila queda fuera de la regresión).", "Claude")
     wg.freeze_panes = "A2"
-    anchos(wg, [16, 7, 13, 40, 22])
+    anchos(wg, [16, 7, 11, 30, 20, 11, 10, 11, 10, 11, 20, 3, 34])
+    wg.row_dimensions[1].height = 42
     ultima_gini = len(panel) + 1
 
     # --- Puente_CPI: regresión 2012 (método nuevo) sobre 2011 (método antiguo) --
@@ -341,7 +365,7 @@ def main():
         otras = [v for v in VARIABLES if v != DEPENDIENTE]
         titulos = (["País", "Año", f"Y: {DEPENDIENTE} ({criterio})"]
                    + [f"X: {v} ({criterio})" for v in otras]
-                   + ["X: Gini", "X: CPI escala 0-10 (empalmado)", "X: CPI 0-100 (desde 2012)",
+                   + ["X: Gini (observado o interpolado según Gini!M2)", "X: CPI escala 0-10 (empalmado)", "X: CPI 0-100 (desde 2012)",
                       "X: CPI 0-100 empalmado por regresión"]
                    + [f"X: {n}" for n in CONTROLES]
                    + ["Completo con CPI 0-10 (1 = usar)", "Completo con CPI 0-100 (1 = usar)",
@@ -362,7 +386,8 @@ def main():
                 c = wp.cell(i, j, f)
                 c.font, c.number_format = F_LINK, "0.0%"
             jg = 3 + 1 + len(otras)
-            idx = f"INDEX(Gini!$C$2:$C${ultima_gini},MATCH($A{i}&\"|\"&$B{i},Gini!$E$2:$E${ultima_gini},0))"
+            idx = (f"INDEX(Gini!$A$2:$J${ultima_gini},MATCH($A{i}&\"|\"&$B{i},Gini!$E$2:$E${ultima_gini},0),"
+                   f"IF(Gini!$M$2=1,10,3))")
             wp.cell(i, jg, f'=IFERROR(IF({idx}="","",{idx}),"")').font = F_LINK
             wp.cell(i, jg).number_format = "0.0"
             for k, col, fmt in ((1, "E", "0.00"), (2, "F", "0"), (3, "G", "0.0")):
@@ -403,7 +428,9 @@ def main():
          "Valores copiados de la herramienta online (texto azul).", False),
         ("Categorias: % de cada categoría por país-año, calculado con SUMIFS sobre Datos.", False),
         ("Gini: Banco Mundial (SI.POV.GINI, 0-100). Las celdas amarillas no tienen dato del Banco Mundial para ese "
-         "año; puede completarlas con otra fuente (p. ej. SEDLAC) o dejarlas vacías.", False),
+         "año; puede completarlas con otra fuente (p. ej. SEDLAC) o dejarlas vacías. 'Gini interpolado' (col. J) "
+         "llena los huecos con una recta entre el año observado anterior y el siguiente (no extrapola). "
+         "La celda Gini!M2 decide qué versión usan los paneles: 0 = observado, 1 = interpolado.", False),
         ("Controles: homicidios por 100.000 hab. (Banco Mundial/UNODC), crecimiento del PIB % anual (Banco "
          "Mundial) y gasto público social del gobierno central en % del PIB (CEPALSTAT, 2010-2023).", False),
         ("Corrupcion: Índice de Percepción de la Corrupción (Transparency International). Dos versiones: "
